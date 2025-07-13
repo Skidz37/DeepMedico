@@ -1,0 +1,82 @@
+import os
+import argparse
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def load_signal(file_path, sampling_rate):
+    df = pd.read_csv(file_path, header=None, names=['value'])
+    # Create time axis using sampling rate
+    time = pd.to_timedelta(df.index / sampling_rate, unit='s')
+    df['time'] = time
+    df.set_index('time', inplace=True)
+    return df
+
+def load_events(file_path):
+    events = pd.read_csv(file_path)
+    # Ensure start and end are timedelta
+    events['start'] = pd.to_timedelta(events['start'], unit='s')
+    events['end'] = pd.to_timedelta(events['end'], unit='s')
+    return events
+
+def plot_signals(participant_path, participant_name):
+    # Load signals
+    nasal = load_signal(os.path.join(participant_path, 'Flow.txt'), sampling_rate=32)
+    thoracic = load_signal(os.path.join(participant_path, 'Thorac.txt'), sampling_rate=32)
+    spo2 = load_signal(os.path.join(participant_path, 'SPO2.txt'), sampling_rate=4)
+
+    # Load events
+    events = load_events(os.path.join(participant_path, 'Flow Events.csv'))
+
+    # Create figure
+    fig, axs = plt.subplots(3, 1, figsize=(15, 10), sharex=True)
+    fig.suptitle(f'Sleep Session Signals - {participant_name}', fontsize=16)
+
+    # Plot nasal airflow
+    axs[0].plot(nasal.index.total_seconds() / 3600, nasal['value'], label='Nasal Airflow', color='blue')
+    axs[0].set_ylabel("Nasal Airflow")
+    axs[0].legend(loc='upper right')
+
+    # Plot thoracic movement
+    axs[1].plot(thoracic.index.total_seconds() / 3600, thoracic['value'], label='Thoracic Movement', color='green')
+    axs[1].set_ylabel("Thoracic Movement")
+    axs[1].legend(loc='upper right')
+
+    # Plot SpO2
+    axs[2].plot(spo2.index.total_seconds() / 3600, spo2['value'], label='SpO₂ (%)', color='red')
+    axs[2].set_ylabel("SpO₂ (%)")
+    axs[2].set_xlabel("Time (Hours)")
+    axs[2].legend(loc='upper right')
+
+    # Overlay events
+    for i, row in events.iterrows():
+        for ax in axs:
+            ax.axvspan(row['start'].total_seconds() / 3600,
+                       row['end'].total_seconds() / 3600,
+                       color='orange' if row['event'] == 'apnea' else 'purple',
+                       alpha=0.3,
+                       label=row['event'] if i == 0 else "")
+
+    # Deduplicate legend entries
+    handles, labels = axs[0].get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    axs[0].legend(by_label.values(), by_label.keys())
+
+    # Save to PDF
+    os.makedirs("Visualizations", exist_ok=True)
+    output_path = os.path.join("Visualizations", f"{participant_name}.pdf")
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(output_path)
+    plt.close()
+    print(f"Saved visualization to: {output_path}")
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-name", required=True, help="Path to participant folder (e.g., Data/AP20)")
+    args = parser.parse_args()
+
+    participant_path = args.name
+    participant_name = os.path.basename(participant_path)
+    plot_signals(participant_path, participant_name)
+
+if __name__ == "__main__":
+    main()
